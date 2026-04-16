@@ -225,6 +225,8 @@ def create_order() -> tuple[dict[str, Any], int]:
     total_price = data.get("total_price")
     seller_name = data.get("seller_name")
     seller_upi_id = data.get("seller_upi_id")
+    per_kg_price = data.get("per_kg_price")
+    buyer_name = data.get("buyer_name", "வாடிக்கையாளர்")
 
     if not product_name or not quantity or not total_price:
         return _error_response("Missing required order fields.", 400)
@@ -234,11 +236,11 @@ def create_order() -> tuple[dict[str, Any], int]:
         with conn.cursor() as cursor:
             cursor.execute(
                 """
-                INSERT INTO orders (product_name, quantity, total_price, seller_name, seller_upi_id, status)
-                VALUES (%s, %s, %s, %s, %s, 'முடிந்தது')
+                INSERT INTO orders (product_name, quantity, total_price, seller_name, seller_upi_id, status, per_kg_price, buyer_name)
+                VALUES (%s, %s, %s, %s, %s, 'முடிந்தது', %s, %s)
                 RETURNING id
                 """,
-                (product_name, quantity, total_price, seller_name, seller_upi_id)
+                (product_name, quantity, total_price, seller_name, seller_upi_id, per_kg_price, buyer_name)
             )
             order_id = cursor.fetchone()["id"]
         conn.commit()
@@ -280,6 +282,70 @@ def complete_order(order_id: int) -> tuple[dict[str, Any], int]:
                 return _error_response("Order not found.", 404)
         conn.commit()
         return {"success": True, "message": "Order completed"}, 200
+    finally:
+        conn.close()
+
+
+@app.route("/add_product", methods=["POST"])
+def add_product() -> tuple[dict[str, Any], int]:
+    data = request.json or {}
+    name = data.get("name", "")
+    weight = data.get("weight", "")
+    per_kg_price = data.get("per_kg_price", "")
+    total_price = data.get("total_price", "")
+    price = data.get("price", "")
+
+    if not name or not weight:
+        return _error_response("Product name and weight required", 400)
+        
+    conn = models.get_connection()
+    try:
+        with conn.cursor() as cursor:
+            cursor.execute(
+                """
+                INSERT INTO products (name, weight, per_kg_price, total_price, price)
+                VALUES (%s, %s, %s, %s, %s)
+                RETURNING id
+                """,
+                (name, weight, str(per_kg_price), str(total_price), str(price))
+            )
+            row = cursor.fetchone()
+        conn.commit()
+        return {"success": True, "message": "Product added", "id": row["id"]}, 201
+    except Exception as e:
+        return _error_response(str(e), 500)
+    finally:
+        conn.close()
+
+@app.route("/products", methods=["GET"])
+def get_products() -> tuple[dict[str, Any], int]:
+    conn = models.get_connection()
+    try:
+        with conn.cursor() as cursor:
+            cursor.execute("SELECT * FROM products ORDER BY created_at DESC")
+            records = cursor.fetchall()
+            for r in records:
+                if "created_at" in r and r["created_at"]:
+                    r["created_at"] = r["created_at"].isoformat()
+            
+            return {"success": True, "products": records}, 200
+    except Exception as e:
+        return _error_response(str(e), 500)
+    finally:
+        conn.close()
+
+@app.route("/delete_product/<int:product_id>", methods=["DELETE"])
+def delete_product(product_id: int) -> tuple[dict[str, Any], int]:
+    conn = models.get_connection()
+    try:
+        with conn.cursor() as cursor:
+            cursor.execute("DELETE FROM products WHERE id = %s RETURNING id", (product_id,))
+            if cursor.fetchone() is None:
+                return _error_response("Product not found.", 404)
+        conn.commit()
+        return {"success": True, "message": "Product deleted"}, 200
+    except Exception as e:
+        return _error_response(str(e), 500)
     finally:
         conn.close()
 

@@ -137,9 +137,30 @@ def init_db() -> None:
                     product_name TEXT NOT NULL,
                     quantity TEXT NOT NULL,
                     total_price TEXT NOT NULL,
+                    per_kg_price TEXT,
+                    buyer_name TEXT,
                     status TEXT NOT NULL DEFAULT 'நிலுவையில்',
                     seller_name TEXT,
                     seller_upi_id TEXT,
+                    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+                )
+                """
+            )
+            cursor.execute(
+                """
+                ALTER TABLE orders ADD COLUMN IF NOT EXISTS per_kg_price TEXT;
+                ALTER TABLE orders ADD COLUMN IF NOT EXISTS buyer_name TEXT;
+                """
+            )
+            cursor.execute(
+                """
+                CREATE TABLE IF NOT EXISTS products (
+                    id BIGSERIAL PRIMARY KEY,
+                    name TEXT NOT NULL,
+                    weight TEXT NOT NULL,
+                    per_kg_price TEXT NOT NULL,
+                    total_price TEXT NOT NULL,
+                    price TEXT NOT NULL,
                     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
                 )
                 """

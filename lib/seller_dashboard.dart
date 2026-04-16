@@ -2,6 +2,10 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:speech_to_text/speech_to_text.dart' as stt;
+import 'services/api_service.dart';
+import 'package:path_provider/path_provider.dart';
+import 'dart:io';
+import 'package:share_plus/share_plus.dart';
 
 List<Map<String, String>> demoProducts = [];
 
@@ -15,10 +19,89 @@ class SellerDashboardScreen extends StatefulWidget {
 class _SellerDashboardScreenState extends State<SellerDashboardScreen> {
   final stt.SpeechToText _speechToText = stt.SpeechToText();
   bool _isListening = false;
-  
+
   // Text controllers for manual entry
   final TextEditingController _nameController = TextEditingController();
   final TextEditingController _priceController = TextEditingController();
+
+  @override
+  void initState() {
+    super.initState();
+    _fetchProducts();
+  }
+
+  Future<void> _fetchProducts() async {
+    try {
+      final response = await http.get(
+        Uri.parse('${ApiService.baseUrl}/products'),
+      );
+      if (response.statusCode == 200) {
+        final Map<String, dynamic> data = json.decode(response.body);
+        final List<dynamic> products = data['products'] ?? [];
+        if (mounted) {
+          setState(() {
+            demoProducts = products
+                .map(
+                  (p) => {
+                    'id': p['id']?.toString() ?? '',
+                    'name': p['name']?.toString() ?? '',
+                    'weight': p['weight']?.toString() ?? '',
+                    'per_kg_price': p['per_kg_price']?.toString() ?? '',
+                    'total_price': p['total_price']?.toString() ?? '',
+                    'price': p['price']?.toString() ?? '',
+                  },
+                )
+                .toList();
+          });
+        }
+      }
+    } catch (e) {
+      print('Error fetching products: ');
+    }
+  }
+
+  Future<void> _deleteProduct(int index, String productId) async {
+    setState(() {
+      demoProducts.removeAt(index);
+    });
+
+    if (productId.isNotEmpty) {
+      try {
+        final response = await http.delete(
+          Uri.parse('${ApiService.baseUrl}/delete_product/$productId'),
+        );
+        if (response.statusCode != 200) {
+          print('Failed to delete to database');
+        }
+      } catch (e) {
+        print('Network Error deleting product: $e');
+      }
+    }
+  }
+
+  Future<void> _addNewProduct(Map<String, String> productMap) async {
+    setState(() {
+      demoProducts.insert(0, productMap);
+    });
+
+    try {
+      final response = await http.post(
+        Uri.parse('${ApiService.baseUrl}/add_product'),
+        headers: {'Content-Type': 'application/json'},
+        body: json.encode(productMap),
+      );
+      if (response.statusCode == 201) {
+        final data = json.decode(response.body);
+        setState(() {
+          demoProducts[0]['id'] = data['id'].toString();
+        });
+      } else {
+        print('Failed to save to database');
+      }
+    } catch (e) {
+      print('Network Error saving product: $e');
+    }
+  }
 
   String _formatWeight(double w) {
     if (w == 0.25) return 'கால் கிலோ';
@@ -36,7 +119,9 @@ class _SellerDashboardScreenState extends State<SellerDashboardScreen> {
 
   String _formatPriceDisplay(double w, int totPrice) {
     double perKg = totPrice / w;
-    String perKgStr = perKg == perKg.toInt() ? perKg.toInt().toString() : perKg.toStringAsFixed(2);
+    String perKgStr = perKg == perKg.toInt()
+        ? perKg.toInt().toString()
+        : perKg.toStringAsFixed(2);
     return '₹$perKgStr / ஒரு கிலோ';
   }
 
@@ -54,7 +139,7 @@ class _SellerDashboardScreenState extends State<SellerDashboardScreen> {
       onError: (errorNotification) {
         if (mounted) {
           setState(() {
-             _isListening = false;
+            _isListening = false;
           });
         }
       },
@@ -69,7 +154,7 @@ class _SellerDashboardScreenState extends State<SellerDashboardScreen> {
       _speechToText.listen(
         onResult: (result) {
           if (result.finalResult && result.recognizedWords.isNotEmpty) {
-             _processVoiceCommand(result.recognizedWords);
+            _processVoiceCommand(result.recognizedWords);
           }
         },
         localeId: 'ta_IN',
@@ -83,21 +168,21 @@ class _SellerDashboardScreenState extends State<SellerDashboardScreen> {
       }
     }
   }
-  
+
   void _stopListening() async {
-     await _speechToText.stop();
-     if (mounted) {
-       setState(() {
-          _isListening = false;
-       });
-     }
+    await _speechToText.stop();
+    if (mounted) {
+      setState(() {
+        _isListening = false;
+      });
+    }
   }
 
   void _processVoiceCommand(String command) {
     if (command.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('சரியாக பேசவும்')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('சரியாக பேசவும்')));
       return;
     }
 
@@ -105,24 +190,46 @@ class _SellerDashboardScreenState extends State<SellerDashboardScreen> {
     double weight = 1.0;
     int totalPrice = 0;
 
-    final weightRegExp = RegExp(r'(கால்|அரை|முக்கால்|ஒரு|ஒன்று|ஒன்னு|ரெண்டு|இரண்டு|மூணு|மூன்று|மூன்|நாலு|நான்கு|அஞ்சு|ஐந்து|ஆறு|1|2|3|4|5|6)\s*(கிலோ|kg|kilo|kilos)', caseSensitive: false);
+    final weightRegExp = RegExp(
+      r'(கால்|அரை|முக்கால்|ஒரு|ஒன்று|ஒன்னு|ரெண்டு|இரண்டு|மூணு|மூன்று|மூன்|நாலு|நான்கு|அஞ்சு|ஐந்து|ஆறு|1|2|3|4|5|6)\s*(கிலோ|kg|kilo|kilos)',
+      caseSensitive: false,
+    );
     final weightMatch = weightRegExp.firstMatch(command);
 
     String textWithoutWeight = command;
 
     if (weightMatch != null) {
       final weightStr = weightMatch.group(1)!;
-      if (weightStr == 'கால்') weight = 0.25;
-      else if (weightStr == 'அரை') weight = 0.5;
-      else if (weightStr == 'முக்கால்') weight = 0.75;
-      else if (weightStr == 'ஒரு' || weightStr == 'ஒன்று' || weightStr == 'ஒன்னு' || weightStr == '1') weight = 1.0;
-      else if (weightStr == 'ரெண்டு' || weightStr == 'இரண்டு' || weightStr == '2') weight = 2.0;
-      else if (weightStr == 'மூணு' || weightStr == 'மூன்று' || weightStr == 'மூன்' || weightStr == '3') weight = 3.0;
-      else if (weightStr == 'நாலு' || weightStr == 'நான்கு' || weightStr == '4') weight = 4.0;
-      else if (weightStr == 'அஞ்சு' || weightStr == 'ஐந்து' || weightStr == '5') weight = 5.0;
-      else if (weightStr == 'ஆறு' || weightStr == '6') weight = 6.0;
+      if (weightStr == 'கால்')
+        weight = 0.25;
+      else if (weightStr == 'அரை')
+        weight = 0.5;
+      else if (weightStr == 'முக்கால்')
+        weight = 0.75;
+      else if (weightStr == 'ஒரு' ||
+          weightStr == 'ஒன்று' ||
+          weightStr == 'ஒன்னு' ||
+          weightStr == '1')
+        weight = 1.0;
+      else if (weightStr == 'ரெண்டு' ||
+          weightStr == 'இரண்டு' ||
+          weightStr == '2')
+        weight = 2.0;
+      else if (weightStr == 'மூணு' ||
+          weightStr == 'மூன்று' ||
+          weightStr == 'மூன்' ||
+          weightStr == '3')
+        weight = 3.0;
+      else if (weightStr == 'நாலு' || weightStr == 'நான்கு' || weightStr == '4')
+        weight = 4.0;
+      else if (weightStr == 'அஞ்சு' || weightStr == 'ஐந்து' || weightStr == '5')
+        weight = 5.0;
+      else if (weightStr == 'ஆறு' || weightStr == '6')
+        weight = 6.0;
 
-      textWithoutWeight = command.replaceFirst(weightMatch.group(0)!, '').trim();
+      textWithoutWeight = command
+          .replaceFirst(weightMatch.group(0)!, '')
+          .trim();
     }
 
     // Now test if price is mentioned directly.
@@ -173,7 +280,7 @@ class _SellerDashboardScreenState extends State<SellerDashboardScreen> {
       'rupee': '',
       'rs': '',
       'ரூபாய்': '',
-      'ரூபா': ''
+      'ரூபா': '',
     };
 
     // To prevent issues, lower case english terms.
@@ -181,7 +288,10 @@ class _SellerDashboardScreenState extends State<SellerDashboardScreen> {
 
     for (final key in tamilNumbers.keys) {
       if (parsedPriceText.contains(key)) {
-        parsedPriceText = parsedPriceText.replaceAll(key, tamilNumbers[key]! + ' ');
+        parsedPriceText = parsedPriceText.replaceAll(
+          key,
+          tamilNumbers[key]! + ' ',
+        );
       }
     }
 
@@ -195,29 +305,30 @@ class _SellerDashboardScreenState extends State<SellerDashboardScreen> {
 
       productName = textWithoutWeight;
       for (final key in tamilNumbers.keys) {
-         productName = productName.replaceAll(key, '');
+        productName = productName.replaceAll(key, '');
       }
-      productName = productName.replaceAll(totalPriceStr, '')
-                              .replaceAll('ரூபாய்', '')
-                              .replaceAll('ரூபா', '')
-                              .replaceAll('Rs', '')
-                              .replaceAll('rs', '')
-                              .replaceAll('rupees', '')
-                              .replaceAll('rupee', '')
-                              .replaceAll(RegExp(r'\d+'), '')
-                              .trim();
+      productName = productName
+          .replaceAll(totalPriceStr, '')
+          .replaceAll('ரூபாய்', '')
+          .replaceAll('ரூபா', '')
+          .replaceAll('Rs', '')
+          .replaceAll('rs', '')
+          .replaceAll('rupees', '')
+          .replaceAll('rupee', '')
+          .replaceAll(RegExp(r'\d+'), '')
+          .trim();
     } else {
       // Failed to find price
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('விலை புரியவில்லை ()')),    
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('விலை புரியவில்லை ()')));
       return;
     }
 
     if (productName.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('பொருள் புரியவில்லை ()')),    
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('பொருள் புரியவில்லை ()')));
       return;
     }
 
@@ -226,19 +337,17 @@ class _SellerDashboardScreenState extends State<SellerDashboardScreen> {
         ? perKgPrice.toInt().toString()
         : perKgPrice.toStringAsFixed(2);
 
-    setState(() {
-      demoProducts.insert(0, {
-        'name': productName,
-        'weight': weight.toString(),
-        'per_kg_price': perKgStr,
-        'total_price': totalPrice.toString(),
-        'price': _formatPriceDisplay(weight, totalPrice)
-      });
+    _addNewProduct({
+      'name': productName,
+      'weight': weight.toString(),
+      'per_kg_price': perKgStr,
+      'total_price': totalPrice.toString(),
+      'price': _formatPriceDisplay(weight, totalPrice),
     });
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(' சேர்க்கப்பட்டது')),
-    );
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(' சேர்க்கப்பட்டது')));
   }
 
   void _showAddProductDialog() {
@@ -258,17 +367,30 @@ class _SellerDashboardScreenState extends State<SellerDashboardScreen> {
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     TextField(
-                      decoration: const InputDecoration(labelText: 'பொருள் பெயர் (Name)'),
+                      decoration: const InputDecoration(
+                        labelText: 'பொருள் பெயர் (Name)',
+                      ),
                       onChanged: (v) => name = v,
                     ),
                     const SizedBox(height: 10),
                     DropdownButtonFormField<double>(
                       value: _selectedWeight,
-                      decoration: const InputDecoration(labelText: 'அளவு (Weight)'),
+                      decoration: const InputDecoration(
+                        labelText: 'அளவு (Weight)',
+                      ),
                       items: const [
-                        DropdownMenuItem(value: 0.25, child: Text('கால் கிலோ (0.25)')),
-                        DropdownMenuItem(value: 0.5, child: Text('அரை கிலோ (0.5)')),
-                        DropdownMenuItem(value: 0.75, child: Text('முக்கால் கிலோ (0.75)')),
+                        DropdownMenuItem(
+                          value: 0.25,
+                          child: Text('கால் கிலோ (0.25)'),
+                        ),
+                        DropdownMenuItem(
+                          value: 0.5,
+                          child: Text('அரை கிலோ (0.5)'),
+                        ),
+                        DropdownMenuItem(
+                          value: 0.75,
+                          child: Text('முக்கால் கிலோ (0.75)'),
+                        ),
                         DropdownMenuItem(value: 1.0, child: Text('1 கிலோ')),
                         DropdownMenuItem(value: 2.0, child: Text('2 கிலோ')),
                         DropdownMenuItem(value: 3.0, child: Text('3 கிலோ')),
@@ -285,7 +407,9 @@ class _SellerDashboardScreenState extends State<SellerDashboardScreen> {
                     const SizedBox(height: 10),
                     TextField(
                       keyboardType: TextInputType.number,
-                      decoration: const InputDecoration(labelText: 'மொத்த விலை (Total Price ₹)'),
+                      decoration: const InputDecoration(
+                        labelText: 'மொத்த விலை (Total Price ₹)',
+                      ),
                       onChanged: (v) => priceStr = v,
                     ),
                   ],
@@ -304,17 +428,18 @@ class _SellerDashboardScreenState extends State<SellerDashboardScreen> {
                       String perKgStr = (perKgPrice == perKgPrice.toInt())
                           ? perKgPrice.toInt().toString()
                           : perKgPrice.toStringAsFixed(2);
-                      
-                      String displayPrice = _formatPriceDisplay(_selectedWeight, totalPrice);
 
-                      setState(() {
-                        demoProducts.insert(0, {
-                          'name': name,
-                          'weight': _selectedWeight.toString(),
-                          'per_kg_price': perKgStr,
-                          'total_price': totalPrice.toString(),
-                          'price': displayPrice
-                        });
+                      String displayPrice = _formatPriceDisplay(
+                        _selectedWeight,
+                        totalPrice,
+                      );
+
+                      _addNewProduct({
+                        'name': name,
+                        'weight': _selectedWeight.toString(),
+                        'per_kg_price': perKgStr,
+                        'total_price': totalPrice.toString(),
+                        'price': displayPrice,
                       });
                       Navigator.pop(context);
                     }
@@ -362,37 +487,47 @@ class _SellerDashboardScreenState extends State<SellerDashboardScreen> {
                     )
                   : ListView.separated(
                       itemCount: demoProducts.length,
-                      separatorBuilder: (context, index) => const SizedBox(height: 10),
+                      separatorBuilder: (context, index) =>
+                          const SizedBox(height: 10),
                       itemBuilder: (context, index) {
                         final product = demoProducts[index];
                         return Card(
                           color: Colors.white,
                           child: ListTile(
-                            leading: const Icon(Icons.inventory_2, color: Color(0xFF4CAF50)),
+                            leading: const Icon(
+                              Icons.inventory_2,
+                              color: Color(0xFF4CAF50),
+                            ),
                             title: Text(
                               product['name']!,
-                              style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w600),
+                              style: const TextStyle(
+                                fontSize: 22,
+                                fontWeight: FontWeight.w600,
+                              ),
                             ),
-                              trailing: Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  Text(
-                                    product['price']!,
-                                    style: const TextStyle(
-                                      fontSize: 20,
-                                      fontWeight: FontWeight.bold,
-                                      color: Color(0xFF2E7D32),
-                                    ),
+                            trailing: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Text(
+                                  product['price']!,
+                                  style: const TextStyle(
+                                    fontSize: 20,
+                                    fontWeight: FontWeight.bold,
+                                    color: Color(0xFF2E7D32),
                                   ),
-                                  IconButton(
-                                    icon: const Icon(Icons.delete, color: Colors.red),
-                                    onPressed: () {
-                                      setState(() {
-                                        demoProducts.removeAt(index);
-                                      });
-                                    },
+                                ),
+                                IconButton(
+                                  icon: const Icon(
+                                    Icons.delete,
+                                    color: Colors.red,
                                   ),
-                                ],
+                                  onPressed: () {
+                                    final productId =
+                                        demoProducts[index]['id'] ?? '';
+                                    _deleteProduct(index, productId);
+                                  },
+                                ),
+                              ],
                             ),
                           ),
                         );
@@ -410,7 +545,10 @@ class _SellerDashboardScreenState extends State<SellerDashboardScreen> {
                       icon: const Icon(Icons.add, size: 20),
                       label: const Text(
                         'சேர்க்க',
-                        style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
+                        style: TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.bold,
+                        ),
                       ),
                       style: ElevatedButton.styleFrom(
                         padding: EdgeInsets.zero,
@@ -429,15 +567,25 @@ class _SellerDashboardScreenState extends State<SellerDashboardScreen> {
                   child: SizedBox(
                     height: 58,
                     child: ElevatedButton.icon(
-                      onPressed: _isListening ? _stopListening : _startListening,
-                      icon: Icon(_isListening ? Icons.mic : Icons.mic_none, size: 20),
+                      onPressed: _isListening
+                          ? _stopListening
+                          : _startListening,
+                      icon: Icon(
+                        _isListening ? Icons.mic : Icons.mic_none,
+                        size: 20,
+                      ),
                       label: Text(
                         _isListening ? 'கேட்கிறது' : 'பேசவும்',
-                        style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
+                        style: const TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.bold,
+                        ),
                       ),
                       style: ElevatedButton.styleFrom(
                         padding: EdgeInsets.zero,
-                        backgroundColor: _isListening ? Colors.red : const Color(0xFF2196F3),
+                        backgroundColor: _isListening
+                            ? Colors.red
+                            : const Color(0xFF2196F3),
                         foregroundColor: Colors.white,
                         shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(14),
@@ -453,12 +601,20 @@ class _SellerDashboardScreenState extends State<SellerDashboardScreen> {
                     height: 58,
                     child: ElevatedButton.icon(
                       onPressed: () {
-                        Navigator.push(context, MaterialPageRoute(builder: (c) => const SellerOrdersScreen()));
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (c) => const SellerOrdersScreen(),
+                          ),
+                        );
                       },
                       icon: const Icon(Icons.inventory_2, size: 18),
                       label: const Text(
                         'விற்பனை',
-                        style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
+                        style: TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.bold,
+                        ),
                       ),
                       style: ElevatedButton.styleFrom(
                         padding: EdgeInsets.zero,
@@ -518,7 +674,7 @@ class _SellerOrdersScreenState extends State<SellerOrdersScreen> {
   }
 
   Future<void> _fetchOrders() async {
-    const url = 'http://127.0.0.1:5000/orders';
+    final url = '${ApiService.baseUrl}/orders';
     try {
       final response = await http.get(Uri.parse(url));
       if (response.statusCode == 200) {
@@ -535,6 +691,34 @@ class _SellerOrdersScreenState extends State<SellerOrdersScreen> {
     }
   }
 
+  void _exportCSV() async {
+    try {
+      final List<String> rows = [
+        'பொருள் பெயர்,அளவு,ஒரு கிலோ விலை,மொத்தம்,வாங்கியவர்',
+      ];
+      for (var order in _orders) {
+        final name = order['product_name'] ?? '';
+        final qty = order['quantity'] ?? '';
+        final pkg = order['per_kg_price'] ?? '';
+        final tot = order['total_price'] ?? '';
+        final buyer = order['buyer_name'] ?? 'தெரியவில்லை';
+        rows.add('$name,$qty,$pkg,$tot,$buyer');
+      }
+      String csv = rows.join('\n');
+
+      final directory = await getApplicationDocumentsDirectory();
+      final path = '${directory.path}/sales_report.csv';
+      final file = File(path);
+      await file.writeAsString('\uFEFF' + csv);
+
+      await Share.shareXFiles([XFile(path)], text: 'Sales Report');
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('CSV ஏற்றுமதி செய்ய முடியவில்லை: $e')),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -546,59 +730,153 @@ class _SellerOrdersScreenState extends State<SellerOrdersScreen> {
       ),
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())
-          : _orders.isEmpty
-              ? const Center(
-                  child: Text(
-                    'இன்னும் விற்பனைகள் இல்லை',
-                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.grey),
-                  ),
-                )
-              : ListView.builder(
-                  padding: const EdgeInsets.all(16),
-                  itemCount: _orders.length,
-                  itemBuilder: (context, index) {
-                    final order = _orders[index];
-                    final statusColor = order['status'] == 'முடிந்தது' ? Colors.green : Colors.orange;
+          : Column(
+              children: [
+                Expanded(
+                  child: _orders.isEmpty
+                      ? const Center(
+                          child: Text(
+                            'இன்னும் விற்பனைகள் இல்லை',
+                            style: TextStyle(
+                              fontSize: 18,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.grey,
+                            ),
+                          ),
+                        )
+                      : ListView.builder(
+                          padding: const EdgeInsets.all(16),
+                          itemCount: _orders.length,
+                          itemBuilder: (context, index) {
+                            final order = _orders[index];
+                            final statusColor = order['status'] == 'முடிந்தது'
+                                ? Colors.green
+                                : Colors.orange;
 
-                    return Card(
+                            return Card(
+                              color: Colors.white,
+                              margin: const EdgeInsets.only(bottom: 12),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              child: Padding(
+                                padding: const EdgeInsets.all(16.0),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      order['product_name'] ?? 'தெரியவில்லை',
+                                      style: const TextStyle(
+                                        fontSize: 20,
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 8),
+                                    Text(
+                                      'அளவு: ${order['quantity'] ?? ''} கிலோ',
+                                      style: const TextStyle(fontSize: 16),
+                                    ),
+                                    const SizedBox(height: 8),
+                                    Text(
+                                      'ஒரு கிலோ விலை: ₹${order['per_kg_price'] ?? ''}',
+                                      style: const TextStyle(fontSize: 16),
+                                    ),
+                                    const SizedBox(height: 8),
+                                    Text(
+                                      'மொத்தம்: ₹${order['total_price'] ?? ''}',
+                                      style: const TextStyle(
+                                        fontSize: 18,
+                                        fontWeight: FontWeight.bold,
+                                        color: Color(0xFF2E7D32),
+                                      ),
+                                    ),
+                                    const SizedBox(height: 8),
+                                    Text(
+                                      'வாங்கியவர்: ${order['buyer_name'] ?? 'தெரியவில்லை'}',
+                                      style: const TextStyle(fontSize: 16),
+                                    ),
+                                    const SizedBox(height: 8),
+                                    Row(
+                                      children: [
+                                        const Text(
+                                          'நிலை: ',
+                                          style: TextStyle(fontSize: 16),
+                                        ),
+                                        Text(
+                                          order['status'] ?? 'நிலுவையில்',
+                                          style: TextStyle(
+                                            fontSize: 16,
+                                            fontWeight: FontWeight.bold,
+                                            color: statusColor,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            );
+                          },
+                        ),
+                ),
+                if (_orders.isNotEmpty)
+                  Container(
+                    padding: const EdgeInsets.all(16),
+                    decoration: const BoxDecoration(
                       color: Colors.white,
-                      margin: const EdgeInsets.only(bottom: 12),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                      child: Padding(
-                        padding: const EdgeInsets.all(16.0),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
+                      border: Border(top: BorderSide(color: Colors.black12)),
+                    ),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
                           children: [
-                            Text(
-                              order['product_name'] ?? 'தெரியவில்லை',
-                              style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+                            const Text(
+                              'மொத்த விற்பனை:',
+                              style: TextStyle(
+                                fontSize: 18,
+                                fontWeight: FontWeight.bold,
+                              ),
                             ),
-                            const SizedBox(height: 8),
-                            Text(
-                              ' கிலோ',
-                              style: const TextStyle(fontSize: 16),
-                            ),
-                            const SizedBox(height: 8),
                             Text(
                               '₹',
-                              style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Color(0xFF2E7D32)),
-                            ),
-                            const SizedBox(height: 8),
-                            Row(
-                              children: [
-                                const Text('நிலை: ', style: TextStyle(fontSize: 16)),
-                                Text(
-                                  order['status'] ?? 'நிலுவையில்',
-                                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: statusColor),
-                                ),
-                              ],
+                              style: const TextStyle(
+                                fontSize: 20,
+                                fontWeight: FontWeight.bold,
+                                color: Color(0xFF2E7D32),
+                              ),
                             ),
                           ],
                         ),
-                      ),
-                    );
-                  },
-                ),
+                        const SizedBox(height: 16),
+                        SizedBox(
+                          width: double.infinity,
+                          height: 48,
+                          child: ElevatedButton.icon(
+                            onPressed: _exportCSV,
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: const Color(0xFF2E7D32),
+                              foregroundColor: Colors.white,
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                            ),
+                            icon: const Icon(Icons.download),
+                            label: const Text(
+                              'அறிக்கை ஏற்றுமதி (CSV)',
+                              style: TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+              ],
+            ),
     );
   }
 }

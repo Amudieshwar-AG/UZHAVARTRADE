@@ -14,7 +14,7 @@ class ApiService {
     if (kIsWeb) {
       return 'http://127.0.0.1:5000';
     }
-    return 'http://10.143.105.57:5000';
+    return 'http://10.93.146.57:5000';
   }
 
   static Uri _uri(String path) => Uri.parse('$baseUrl$path');

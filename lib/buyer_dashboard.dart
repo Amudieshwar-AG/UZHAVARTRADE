@@ -4,6 +4,7 @@ import 'package:http/http.dart' as http;
 import 'package:speech_to_text/speech_to_text.dart' as stt;
 import 'package:flutter_tts/flutter_tts.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'services/api_service.dart';
 
 import 'seller_dashboard.dart';
 
@@ -55,13 +56,14 @@ class _BuyerDashboardScreenState extends State<BuyerDashboardScreen> {
       );
 
       final response = await http.get(
-        Uri.parse('http://127.0.0.1:5000/sellers'),
+        Uri.parse('${ApiService.baseUrl}/sellers'),
       );
       if (!mounted) return;
       Navigator.pop(context); // close loader
 
       if (response.statusCode == 200) {
-        final List<dynamic> sellers = json.decode(response.body);
+        final Map<String, dynamic> responseData = json.decode(response.body);
+        final List<dynamic> sellers = responseData['sellers'] ?? [];
         if (sellers.isNotEmpty) {
           final seller = sellers[0];
           final String sellerName = seller['name'] ?? 'விற்பனையாளர்';
@@ -72,7 +74,7 @@ class _BuyerDashboardScreenState extends State<BuyerDashboardScreen> {
           );
 
           try {
-            await launchUrl(upiUri);
+            await launchUrl(upiUri, mode: LaunchMode.externalApplication);
           } catch (e) {
             print('Could not launch UPI app: $e');
             // Allow manual confirmation if device has no UPI apps (e.g., emulator)
@@ -166,7 +168,7 @@ class _BuyerDashboardScreenState extends State<BuyerDashboardScreen> {
     String sellerName,
     String sellerUpiId,
   ) async {
-    const url = 'http://127.0.0.1:5000/orders';
+    final url = '${ApiService.baseUrl}/orders';
     try {
       showDialog(
         context: context,
@@ -183,6 +185,8 @@ class _BuyerDashboardScreenState extends State<BuyerDashboardScreen> {
           'total_price': totalPrice.toStringAsFixed(2),
           'seller_name': sellerName,
           'seller_upi_id': sellerUpiId,
+          'per_kg_price': product['per_kg_price']?.toString() ?? '',
+          'buyer_name': 'வாடிக்கையாளர்',
         }),
       );
 
