@@ -223,6 +223,8 @@ def create_order() -> tuple[dict[str, Any], int]:
     product_name = data.get("product_name")
     quantity = data.get("quantity")
     total_price = data.get("total_price")
+    seller_name = data.get("seller_name")
+    seller_upi_id = data.get("seller_upi_id")
 
     if not product_name or not quantity or not total_price:
         return _error_response("Missing required order fields.", 400)
@@ -232,11 +234,11 @@ def create_order() -> tuple[dict[str, Any], int]:
         with conn.cursor() as cursor:
             cursor.execute(
                 """
-                INSERT INTO orders (product_name, quantity, total_price)
-                VALUES (%s, %s, %s)
+                INSERT INTO orders (product_name, quantity, total_price, seller_name, seller_upi_id, status)
+                VALUES (%s, %s, %s, %s, %s, 'முடிந்தது')
                 RETURNING id
                 """,
-                (product_name, quantity, total_price)
+                (product_name, quantity, total_price, seller_name, seller_upi_id)
             )
             order_id = cursor.fetchone()["id"]
         conn.commit()

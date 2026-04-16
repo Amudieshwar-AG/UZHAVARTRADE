@@ -19,6 +19,7 @@ class SellerRecord:
     phone: str
     created_at: str
     last_login: str | None
+    upi_id: str | None
 
 
 @dataclass(frozen=True)
@@ -111,7 +112,8 @@ def init_db() -> None:
                 phone TEXT NOT NULL UNIQUE,
                 voice_embedding BYTEA NOT NULL,
                 created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-                last_login TIMESTAMPTZ
+                last_login TIMESTAMPTZ,
+                upi_id TEXT
             )
             """
         )
@@ -136,6 +138,8 @@ def init_db() -> None:
                     quantity TEXT NOT NULL,
                     total_price TEXT NOT NULL,
                     status TEXT NOT NULL DEFAULT 'நிலுவையில்',
+                    seller_name TEXT,
+                    seller_upi_id TEXT,
                     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
                 )
                 """
@@ -282,7 +286,7 @@ def list_sellers() -> list[dict[str, Any]]:
         with conn.cursor() as cursor:
             cursor.execute(
             """
-            SELECT id, name, phone, created_at, last_login
+            SELECT id, name, phone, created_at, last_login, upi_id
             FROM sellers
             ORDER BY id DESC
             """
@@ -298,6 +302,7 @@ def list_sellers() -> list[dict[str, Any]]:
             phone=row["phone"],
             created_at=row["created_at"],
             last_login=row["last_login"],
+            upi_id=row["upi_id"],
         )
         for row in rows
     ]
