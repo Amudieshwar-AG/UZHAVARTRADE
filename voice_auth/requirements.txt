@@ -1,0 +1,11 @@
+flask>=3.0,<4.0
+flask-cors>=5.0
+numpy>=1.24,<2.0
+scipy>=1.10
+librosa>=0.10
+sounddevice>=0.4
+openai-whisper>=20231117
+torch>=2.2
+resemblyzer>=0.1.4
+webrtcvad-wheels>=2.0.14
+psycopg2-binary>=2.9
